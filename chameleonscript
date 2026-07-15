@@ -1,0 +1,488 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+    Name = "Theodor's Gui",
+    LoadingTitle = "Loading Theodor's Gui...",
+    LoadingSubtitle = "by Theodorzeidos",
+    ConfigurationSaving = {
+        Enabled = false,
+        FolderName = nil,
+        FileName = "Script"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "",
+        RememberJoins = false
+    },
+    KeySystem = false
+})
+
+Rayfield:Notify({
+    Title = "Theodor's Gui",
+    Content = "Script Loaded.",
+    Duration = 5,
+    Image = "corner-down-right"
+})
+
+local Stats = game:GetService("Stats")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local MarketplaceService = game:GetService("MarketplaceService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- ============================================================
+-- HOME TAB
+-- ============================================================
+local HomeTab = Window:CreateTab("Home", "server")
+
+HomeTab:CreateSection("Overview")
+HomeTab:CreateLabel("Welcome, " .. LocalPlayer.Name, "user")
+HomeTab:CreateLabel("Game: " .. MarketplaceService:GetProductInfo(game.PlaceId).Name, "gamepad-2")
+local PlayersLabel = HomeTab:CreateLabel("Players: " .. #Players:GetPlayers(), "users")
+
+HomeTab:CreateButton({
+    Name = "Copy DC Server Link",
+    Callback = function()
+        setclipboard("discord.com/invite/P5janaEhG2")
+    end
+})
+
+HomeTab:CreateSection("Performance")
+local FpsLabel = HomeTab:CreateLabel("FPS: --", "activity")
+local PingLabel = HomeTab:CreateLabel("Ping: --", "wifi")
+local RamLabel = HomeTab:CreateLabel("RAM: --", "cpu")
+
+local startTime = os.time()
+local function formatTime(seconds)
+    local hours = math.floor(seconds / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    local secs = seconds % 60
+    return string.format("%02d:%02d:%02d", hours, minutes, secs)
+end
+local TimerLabel = HomeTab:CreateLabel("Running Time: 00:00:00", "clock")
+
+local frameCount = 0
+local fpsAccum = 0
+RunService.Heartbeat:Connect(function(dt)
+    frameCount = frameCount + 1
+    fpsAccum = fpsAccum + dt
+end)
+
+task.spawn(function()
+    while true do
+        TimerLabel:Set("Running Time: " .. formatTime(os.time() - startTime))
+
+        local fps = fpsAccum > 0 and math.floor(frameCount / fpsAccum) or 0
+        frameCount = 0
+        fpsAccum = 0
+        FpsLabel:Set("FPS: " .. fps)
+
+        local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+        PingLabel:Set("Ping: " .. ping .. " ms")
+
+        local ram = math.floor(Stats:GetTotalMemoryUsageMb())
+        RamLabel:Set("RAM: " .. ram .. " MB")
+
+        PlayersLabel:Set("Players: " .. #Players:GetPlayers())
+
+        task.wait(1)
+    end
+end)
+
+HomeTab:CreateSection("Info")
+HomeTab:CreateParagraph({
+    Title = "Update Log",
+    Content = [[
+  -  Updated 07/15/26
+
+[+] RELEASE
+]]
+})
+
+-- ============================================================
+-- ESP TAB
+-- ============================================================
+local ESPTab = Window:CreateTab("ESP", "eye")
+
+local SeekerESPEnabled = false
+local HiderESPEnabled = false
+local SeekerColor = Color3.fromRGB(255, 60, 60)
+local HiderColor = Color3.fromRGB(60, 180, 255)
+
+local NickEnabled = false
+local TracerEnabled = false
+local BillboardDistanceEnabled = false
+local OutlineEnabled = false
+local BoxEnabled = false
+
+local ESPObjects = {}
+
+local function findLivingEntry(character, player)
+    local living = Workspace:FindFirstChild("Living")
+    if not living then return nil end
+    return living:FindFirstChild(character.Name) or living:FindFirstChild(player.Name)
+end
+
+local function hasWeapon(character, player)
+    local entry = findLivingEntry(character, player)
+    if not entry then return false end
+    return entry:FindFirstChild("Weapon", true) ~= nil
+end
+
+local function createBillboard(character, color)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_Billboard"
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Adornee = character:FindFirstChild("Head")
+    billboard.Parent = character
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "NameLabel"
+    nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = character.Name
+    nameLabel.TextColor3 = color
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.Parent = billboard
+
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Name = "InfoLabel"
+    infoLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    infoLabel.Position = UDim2.new(0, 0, 0.5, 0)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    infoLabel.TextStrokeTransparency = 0
+    infoLabel.TextScaled = true
+    infoLabel.Font = Enum.Font.Gotham
+    infoLabel.Parent = billboard
+
+    return billboard, nameLabel, infoLabel
+end
+
+local function createOutline(character, color)
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Outline"
+    highlight.FillTransparency = 1
+    highlight.OutlineColor = color
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = character
+    return highlight
+end
+
+local function createBox(character, color)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local box = Instance.new("BoxHandleAdornment")
+    box.Name = "ESP_Box"
+    box.Adornee = hrp
+    box.AlwaysOnTop = true
+    box.ZIndex = 1
+    box.Size = Vector3.new(4, 6, 4)
+    box.Color3 = color
+    box.Transparency = 0.7
+    box.Parent = hrp
+    return box
+end
+
+local function createTracer(color)
+    local line = Drawing.new("Line")
+    line.Thickness = 1.5
+    line.Color = color
+    line.Transparency = 1
+    line.Visible = false
+    return line
+end
+
+local function destroyESP(player)
+    local objects = ESPObjects[player]
+    if not objects then return end
+    if objects.highlight then objects.highlight:Destroy() end
+    if objects.billboard then objects.billboard:Destroy() end
+    if objects.box then objects.box:Destroy() end
+    if objects.tracer then objects.tracer:Remove() end
+    ESPObjects[player] = nil
+end
+
+local function buildESP(player, character, isSeeker)
+    ESPObjects[player] = {
+        character = character,
+        isSeeker = isSeeker,
+        highlight = nil, billboard = nil, nameLabel = nil,
+        infoLabel = nil, box = nil, tracer = nil,
+    }
+end
+
+local function applyFeatures(player)
+    local objects = ESPObjects[player]
+    if not objects then return end
+
+    local character = objects.character
+    local color = objects.isSeeker and SeekerColor or HiderColor
+
+    if OutlineEnabled and not objects.highlight then
+        objects.highlight = createOutline(character, color)
+    elseif not OutlineEnabled and objects.highlight then
+        objects.highlight:Destroy()
+        objects.highlight = nil
+    end
+    if objects.highlight then objects.highlight.OutlineColor = color end
+
+    if BoxEnabled and not objects.box then
+        objects.box = createBox(character, color)
+    elseif not BoxEnabled and objects.box then
+        objects.box:Destroy()
+        objects.box = nil
+    end
+    if objects.box then objects.box.Color3 = color end
+
+    local needsBillboard = NickEnabled or BillboardDistanceEnabled
+    if needsBillboard and not objects.billboard then
+        objects.billboard, objects.nameLabel, objects.infoLabel = createBillboard(character, color)
+    elseif not needsBillboard and objects.billboard then
+        objects.billboard:Destroy()
+        objects.billboard = nil
+        objects.nameLabel = nil
+        objects.infoLabel = nil
+    end
+    if objects.billboard then
+        objects.nameLabel.Visible = NickEnabled
+        objects.nameLabel.TextColor3 = color
+        objects.infoLabel.Visible = BillboardDistanceEnabled
+    end
+
+    if TracerEnabled and not objects.tracer then
+        objects.tracer = createTracer(color)
+    elseif not TracerEnabled and objects.tracer then
+        objects.tracer:Remove()
+        objects.tracer = nil
+    end
+    if objects.tracer then objects.tracer.Color = color end
+end
+
+local function updateVisuals()
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+    for player, objects in pairs(ESPObjects) do
+        local character = objects.character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+        if hrp then
+            if objects.infoLabel and BillboardDistanceEnabled then
+                local distance = myHrp and math.floor((myHrp.Position - hrp.Position).Magnitude) or 0
+                local role = objects.isSeeker and "Seeker" or "Hider"
+                objects.infoLabel.Text = role .. " | " .. distance .. "m"
+            end
+
+            if objects.tracer then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                if onScreen then
+                    objects.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    objects.tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                    objects.tracer.Visible = true
+                else
+                    objects.tracer.Visible = false
+                end
+            end
+        end
+    end
+end
+
+local function espScan()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            local head = character and character:FindFirstChild("Head")
+
+            if character and humanoid and humanoid.Health > 0 and hrp and head then
+                local isSeeker = hasWeapon(character, player)
+                local shouldShow = (isSeeker and SeekerESPEnabled) or (not isSeeker and HiderESPEnabled)
+                local existing = ESPObjects[player]
+
+                if shouldShow then
+                    if not existing or existing.character ~= character or existing.isSeeker ~= isSeeker then
+                        destroyESP(player)
+                        buildESP(player, character, isSeeker)
+                    end
+                    applyFeatures(player)
+                else
+                    destroyESP(player)
+                end
+            else
+                destroyESP(player)
+            end
+        end
+    end
+
+    updateVisuals()
+end
+
+task.spawn(function()
+    while true do
+        if SeekerESPEnabled or HiderESPEnabled then
+            espScan()
+        else
+            for player in pairs(ESPObjects) do destroyESP(player) end
+        end
+        task.wait(0.1)
+    end
+end)
+
+ESPTab:CreateSection("Teams")
+
+ESPTab:CreateToggle({
+    Name = "Seeker ESP",
+    CurrentValue = false,
+    Flag = "SeekerESPToggle",
+    Callback = function(Value) SeekerESPEnabled = Value end
+})
+
+ESPTab:CreateColorPicker({
+    Name = "Seeker Color",
+    Color = SeekerColor,
+    Flag = "SeekerESPColor",
+    Callback = function(Value) SeekerColor = Value end
+})
+
+ESPTab:CreateToggle({
+    Name = "Hider ESP",
+    CurrentValue = false,
+    Flag = "HiderESPToggle",
+    Callback = function(Value) HiderESPEnabled = Value end
+})
+
+ESPTab:CreateColorPicker({
+    Name = "Hider Color",
+    Color = HiderColor,
+    Flag = "HiderESPColor",
+    Callback = function(Value) HiderColor = Value end
+})
+
+ESPTab:CreateSection("Display")
+
+ESPTab:CreateToggle({
+    Name = "Nickname",
+    CurrentValue = false,
+    Flag = "ESPNickToggle",
+    Callback = function(Value) NickEnabled = Value end
+})
+
+ESPTab:CreateToggle({
+    Name = "Distance",
+    CurrentValue = false,
+    Flag = "ESPDistanceToggle",
+    Callback = function(Value) BillboardDistanceEnabled = Value end
+})
+
+ESPTab:CreateToggle({
+    Name = "Outline",
+    CurrentValue = false,
+    Flag = "ESPOutlineToggle",
+    Callback = function(Value) OutlineEnabled = Value end
+})
+
+ESPTab:CreateToggle({
+    Name = "Box",
+    CurrentValue = false,
+    Flag = "ESPBoxToggle",
+    Callback = function(Value) BoxEnabled = Value end
+})
+
+ESPTab:CreateToggle({
+    Name = "Tracer",
+    CurrentValue = false,
+    Flag = "ESPTracerToggle",
+    Callback = function(Value) TracerEnabled = Value end
+})
+
+local MiscTab = Window:CreateTab("Misc", "settings")
+
+local Event = game:GetService("ReplicatedStorage").Remotes.RedeemCode
+
+local Codes = {
+    "THEBEACH",
+    "PAINTME",
+    "HIDENSEEK",
+    "LUCKYDAY",
+    "THANKSFORPLAYING",
+    "FULLRELEASE",
+    "RELEASE!"
+}
+
+MiscTab:CreateButton({
+    Name = "Redeem All Codes",
+    Callback = function()
+        for _, code in ipairs(Codes) do
+            pcall(function()
+                Event:FireServer(code)
+            end)
+            task.wait(0.5)
+        end
+    end
+})
+
+local Event = game:GetService("ReplicatedStorage").Remotes.ClaimGift
+
+local AutoClaim = false
+
+local function ClaimAllGifts()
+    for i = 1, 8 do
+        pcall(function()
+            Event:FireServer("Gift" .. i)
+        end)
+        task.wait(0.3)
+    end
+end
+
+task.spawn(function()
+    while true do
+        if AutoClaim then
+            ClaimAllGifts()
+            task.wait(60)
+        end
+        task.wait()
+    end
+end)
+
+MiscTab:CreateToggle({
+    Name = "Auto Claim Playtime Rewards",
+    CurrentValue = false,
+    Flag = "AutoClaimGiftsToggle",
+    Callback = function(Value)
+        AutoClaim = Value
+    end
+})
+
+local Event = game:GetService("ReplicatedStorage").Remotes.Taunt
+
+local AutoTaunt = false
+
+task.spawn(function()
+    while true do
+        if AutoTaunt then
+            pcall(function()
+                Event:FireServer()
+            end)
+            task.wait(0.5)
+        end
+        task.wait()
+    end
+end)
+
+MiscTab:CreateToggle({
+    Name = "Auto Taunt",
+    CurrentValue = false,
+    Flag = "AutoTauntToggle",
+    Callback = function(Value)
+        AutoTaunt = Value
+    end
+})
